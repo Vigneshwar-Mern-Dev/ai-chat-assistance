@@ -1,6 +1,7 @@
 const { randomNumberInRange, sleep } = require("../utils/delay");
 const { isPersonalChat, isPersonalChatId } = require("../utils/chatFilters");
 const { sanitizeReplyText } = require("../utils/replySanitizer");
+const { resolveScriptedReply } = require("./replyScriptService");
 
 function createAutoReplyService({ store, openAIService, getClient }) {
   const pendingReplies = new Map();
@@ -132,12 +133,22 @@ function createAutoReplyService({ store, openAIService, getClient }) {
 
     try {
       chat = await client.getChatById(chatId);
+      const conversationHistory = store.getRecentMessagesForChat(chatId, 10);
+      const scriptedReply = await resolveScriptedReply({
+        messageText: combinedMessage,
+        classifyIntent: (intents) => openAIService.classifyIntent({
+          messageText: combinedMessage,
+          contactName: pendingReply.chatName,
+          conversationHistory,
+          intents
+        })
+      });
 
-      const replyText = await openAIService.generateReply({
+      const replyText = scriptedReply?.replyText || await openAIService.generateReply({
         customPrompt: settings.customPrompt,
         messageText: combinedMessage,
         contactName: pendingReply.chatName,
-        conversationHistory: store.getRecentMessagesForChat(chatId, 10)
+        conversationHistory
       });
       const safeReplyText = sanitizeReplyText(replyText);
 

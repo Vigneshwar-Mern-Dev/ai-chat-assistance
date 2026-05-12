@@ -93,15 +93,7 @@ function createOpenAIService() {
     return historyLines.join("\n");
   }
 
-  async function generateReply({ customPrompt, messageText, contactName, conversationHistory = [] }) {
-    const safeMessageText = String(messageText || "").trim();
-
-    if (!safeMessageText) {
-      throw new Error("Cannot generate an AI reply for an empty message");
-    }
-
-    const systemInstruction = `${customPrompt}\nReply like a real person on WhatsApp. Keep it short unless the user asked for detail. Output only the message to send.`;
-    const prompt = `Contact: ${contactName}\nRecent conversation:\n${formatConversationHistory(conversationHistory)}\n\nLatest incoming message:\n${safeMessageText}`;
+  async function requestModelText({ systemInstruction, prompt, temperature = 0.7, maxTokens = 180 }) {
     const provider = getProvider();
     let output = "";
 
@@ -123,8 +115,8 @@ function createOpenAIService() {
           { role: "system", content: systemInstruction },
           { role: "user", content: prompt }
         ],
-        temperature: 0.7,
-        max_tokens: 180
+        temperature,
+        max_tokens: maxTokens
       });
 
       output = completion.choices?.[0]?.message?.content?.trim() || "";
@@ -149,7 +141,85 @@ function createOpenAIService() {
     return output;
   }
 
+  function parseJsonObject(value) {
+    const rawValue = String(value || "").trim();
+    const jsonMatch = rawValue.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function classifyIntent({ messageText, contactName, conversationHistory = [], intents = [] }) {
+    const safeMessageText = String(messageText || "").trim();
+    const safeIntents = intents.filter(Boolean);
+
+    if (!safeMessageText || !safeIntents.length) {
+      return {
+        intent: null,
+        confidence: 0
+      };
+    }
+
+    const systemInstruction =
+      "Classify a WhatsApp message into one of the provided intent names. Return only JSON with keys intent and confidence. Use null intent when none clearly match.";
+    const prompt = [
+      `Allowed intents: ${safeIntents.join(", ")}`,
+      `Contact: ${contactName || "unknown"}`,
+      `Recent conversation:\n${formatConversationHistory(conversationHistory)}`,
+      `Latest incoming message:\n${safeMessageText}`,
+      'JSON format: {"intent":"intent_name_or_null","confidence":0.0}'
+    ].join("\n\n");
+
+    const output = await requestModelText({
+      systemInstruction,
+      prompt,
+      temperature: 0,
+      maxTokens: 80
+    });
+    const parsed = parseJsonObject(output);
+    const intent = parsed?.intent === null ? null : String(parsed?.intent || "").trim();
+    const confidence = Number(parsed?.confidence || 0);
+
+    if (!intent || !safeIntents.includes(intent)) {
+      return {
+        intent: null,
+        confidence: 0
+      };
+    }
+
+    return {
+      intent,
+      confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0
+    };
+  }
+
+  async function generateReply({ customPrompt, messageText, contactName, conversationHistory = [] }) {
+    const safeMessageText = String(messageText || "").trim();
+
+    if (!safeMessageText) {
+      throw new Error("Cannot generate an AI reply for an empty message");
+    }
+
+    const systemInstruction = `${customPrompt}\nReply like a real person on WhatsApp. Keep it short unless the user asked for detail. Output only the message to send.`;
+    const prompt = `Contact: ${contactName}\nRecent conversation:\n${formatConversationHistory(conversationHistory)}\n\nLatest incoming message:\n${safeMessageText}`;
+
+    return requestModelText({
+      systemInstruction,
+      prompt,
+      temperature: 0.7,
+      maxTokens: 180
+    });
+  }
+
   return {
+    classifyIntent,
     generateReply
   };
 }

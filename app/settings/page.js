@@ -2,6 +2,7 @@
 
 import { Panel } from "@/components/panel";
 import { PageIntro } from "@/components/page-intro";
+import { ReplyScriptManager } from "@/components/reply-script-manager";
 import { SettingsForm } from "@/components/settings-form";
 
 export default function SettingsPage() {
@@ -15,6 +16,10 @@ export default function SettingsPage() {
 
       <Panel title="Reply Configuration" description="Change the reply toggle, delay window, prompt, and typing behavior.">
         <SettingsForm />
+      </Panel>
+
+      <Panel title="Reply Scripts" description="Add exact replies for common intents. If no script matches, the bot falls back to AI.">
+        <ReplyScriptManager />
       </Panel>
     </div>
   );

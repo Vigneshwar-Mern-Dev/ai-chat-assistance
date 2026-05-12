@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: #dbe3ef;
+  background: #070b12;
+  font-family: "Segoe UI Variable Display", "Segoe UI", "Trebuchet MS", sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.22);
+  border-radius: 9999px;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-lg border border-white/10 bg-panel/95 shadow-glow;
+  }
+
+  .panel-soft {
+    @apply rounded-lg border border-white/10 bg-panelSoft/70 shadow-glow;
+  }
+
+  .action-button {
+    @apply inline-flex items-center justify-center rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .action-button-secondary {
+    @apply inline-flex items-center justify-center rounded-lg border border-white/10 bg-slate-900/70 px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:border-slate-400 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .input-field {
+    @apply w-full rounded-lg border border-white/10 bg-slate-950/80 px-3.5 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-accent;
+  }
+
+  .textarea-field {
+    @apply input-field min-h-40 resize-y;
+  }
+
+  .page-intro {
+    @apply rounded-lg border border-white/10 bg-slate-900/70 p-5 shadow-glow sm:p-6;
+  }
+
+  .subtle-grid {
+    background-image:
+      linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-size: 28px 28px;
+    background-position: center;
+  }
+}

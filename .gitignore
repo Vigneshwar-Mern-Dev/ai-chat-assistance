@@ -1,0 +1,12 @@
+node_modules
+.next
+.next-dev
+.next-build
+.next-build-check
+.next-output
+.next-runtime
+.env
+.wwebjs_auth
+.wwebjs_cache
+server/data/runtime.json
+server/data/last-qr.txt

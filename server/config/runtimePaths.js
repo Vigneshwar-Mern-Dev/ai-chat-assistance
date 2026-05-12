@@ -1,8 +1,9 @@
 const path = require("path");
+const os = require("os");
 
 const runtimeRootPath = process.env.WWEBJS_DATA_ROOT
   ? path.resolve(process.env.WWEBJS_DATA_ROOT)
-  : path.join("C:\\tmp", "vr-2-runtime");
+  : path.join(os.tmpdir(), "vr-2-runtime");
 
 const authPath = path.join(runtimeRootPath, "wwebjs_auth");
 const cachePath = path.join(runtimeRootPath, "wwebjs_cache");

@@ -13,11 +13,17 @@ function createWhatsAppClient() {
     },
     puppeteer: {
       headless: true,
-      protocolTimeout: 120000,
+      protocolTimeout: 300000,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage"
+        "--disable-dev-shm-usage",
+        "--disable-extensions",
+        "--disable-gpu",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        "--no-first-run"
       ]
     }
   });

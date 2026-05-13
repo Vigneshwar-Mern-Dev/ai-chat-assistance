@@ -1,6 +1,15 @@
 const express = require("express");
 const { asyncHandler } = require("../utils/asyncHandler");
 
+function runSessionAction(label, action, store) {
+  setImmediate(() => {
+    action().catch((error) => {
+      console.error(`${label} failed:`, error);
+      store.setLastError(error.message || `${label} failed`);
+    });
+  });
+}
+
 function createSessionRoutes({ store, whatsappService }) {
   const router = express.Router();
 
@@ -13,10 +22,7 @@ function createSessionRoutes({ store, whatsappService }) {
   });
 
   router.post("/reconnect", asyncHandler(async (request, response) => {
-    whatsappService.reconnect().catch((error) => {
-      console.error("Manual reconnect failed:", error);
-      store.setLastError(error.message || "Manual reconnect failed");
-    });
+    runSessionAction("Manual reconnect", () => whatsappService.reconnect(), store);
 
     response.json({
       success: true,
@@ -25,10 +31,7 @@ function createSessionRoutes({ store, whatsappService }) {
   }));
 
   router.post("/regenerate-qr", asyncHandler(async (request, response) => {
-    whatsappService.regenerateQr().catch((error) => {
-      console.error("QR regeneration failed:", error);
-      store.setLastError(error.message || "QR regeneration failed");
-    });
+    runSessionAction("QR regeneration", () => whatsappService.regenerateQr(), store);
 
     response.json({
       success: true,

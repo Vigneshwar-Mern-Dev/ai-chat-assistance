@@ -16,7 +16,7 @@ function isAllowedOrigin(origin) {
     return configuredOrigins.includes(origin);
   }
 
-  return /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
+  return /^https?:\/\//.test(origin);
 }
 
 function createCorsOptions() {

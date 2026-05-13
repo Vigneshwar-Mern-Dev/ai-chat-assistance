@@ -1,5 +1,9 @@
 const { randomNumberInRange, sleep } = require("../utils/delay");
-const { isPersonalChat, isPersonalChatId } = require("../utils/chatFilters");
+const {
+  isPersonalChat,
+  isPersonalChatId,
+  shouldAutoReplyToContact
+} = require("../utils/chatFilters");
 const { sanitizeReplyText } = require("../utils/replySanitizer");
 const { resolveScriptedReply } = require("./replyScriptService");
 
@@ -51,6 +55,11 @@ function createAutoReplyService({ store, openAIService, getClient }) {
     const settings = store.getSettings();
 
     if (!settings.aiEnabled) {
+      return;
+    }
+
+    if (!shouldAutoReplyToContact({ chat, contact, contactName })) {
+      console.info(`Ignored auto-reply for protected contact: ${contactName} (${message.from})`);
       return;
     }
 

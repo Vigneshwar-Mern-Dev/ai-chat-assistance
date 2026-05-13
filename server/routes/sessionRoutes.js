@@ -13,7 +13,11 @@ function createSessionRoutes({ store, whatsappService }) {
   });
 
   router.post("/reconnect", asyncHandler(async (request, response) => {
-    await whatsappService.reconnect();
+    whatsappService.reconnect().catch((error) => {
+      console.error("Manual reconnect failed:", error);
+      store.setLastError(error.message || "Manual reconnect failed");
+    });
+
     response.json({
       success: true,
       snapshot: store.getSnapshot()
@@ -21,7 +25,11 @@ function createSessionRoutes({ store, whatsappService }) {
   }));
 
   router.post("/regenerate-qr", asyncHandler(async (request, response) => {
-    await whatsappService.regenerateQr();
+    whatsappService.regenerateQr().catch((error) => {
+      console.error("QR regeneration failed:", error);
+      store.setLastError(error.message || "QR regeneration failed");
+    });
+
     response.json({
       success: true,
       snapshot: store.getSnapshot()

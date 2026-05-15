@@ -76,10 +76,11 @@ async function startServer() {
     openAIService
   });
 
+  logger.info("Registering authentication routes at /api/auth");
+  app.use("/api/auth", createAuthRouter());
+
   // Apply general rate limit to all /api routes
   app.use("/api", apiLimiter);
-
-  app.use("/api/auth", createAuthRouter());
 
   app.use("/api", requireDashboardAuth);
   app.use("/api/session", sessionLimiter);

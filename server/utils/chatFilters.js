@@ -65,16 +65,25 @@ const defaultBlockedContactPatterns = [
   /\bno[-\s]?reply\b/i
 ];
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Cache configured patterns so we don't re-parse the env var on every message.
+let configuredBlockedPatterns = null;
+
 function getConfiguredBlockedContactPatterns() {
-  return String(process.env.AUTO_REPLY_BLOCKED_CONTACTS || "")
+  if (configuredBlockedPatterns !== null) {
+    return configuredBlockedPatterns;
+  }
+
+  configuredBlockedPatterns = String(process.env.AUTO_REPLY_BLOCKED_CONTACTS || "")
     .split(",")
     .map((name) => name.trim())
     .filter(Boolean)
     .map((name) => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i"));
-}
 
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return configuredBlockedPatterns;
 }
 
 function hasBlockedContactName(contactName) {
@@ -84,8 +93,9 @@ function hasBlockedContactName(contactName) {
     return false;
   }
 
-  return [...defaultBlockedContactPatterns, ...getConfiguredBlockedContactPatterns()]
-    .some((pattern) => pattern.test(safeName));
+  return [...defaultBlockedContactPatterns, ...getConfiguredBlockedContactPatterns()].some(
+    (pattern) => pattern.test(safeName)
+  );
 }
 
 function isBusinessOrVerifiedContact(contact) {

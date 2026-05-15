@@ -9,13 +9,18 @@ import { classes } from "@/lib/classes";
 const navItems = [
   { href: "/chats", label: "Chats" },
   { href: "/auto-reply", label: "Replies" },
+  { href: "/schedule", label: "Schedule" },
   { href: "/settings", label: "Settings" },
   { href: "/session", label: "Session" }
 ];
 
 export function AppShell({ children }) {
   const pathname = usePathname();
-  const { snapshot, error } = useDashboard();
+  const { snapshot, error, actions } = useDashboard();
+
+  if (pathname === "/login") {
+    return <main>{children}</main>;
+  }
 
   return (
     <div className="min-h-screen border-t border-accent/40">
@@ -67,6 +72,13 @@ export function AppShell({ children }) {
               <Metric label="Auto" value={snapshot.settings.aiEnabled ? "On" : "Off"} />
               <Metric label="Sent" value={String(snapshot.stats.aiRepliedCount)} />
             </div>
+            
+            <button 
+              onClick={actions.logout}
+              className="mt-4 w-full flex items-center justify-center gap-2 rounded-lg border border-white/5 bg-white/5 py-2 text-xs font-medium text-slate-400 transition hover:bg-red-500/10 hover:text-red-300 hover:border-red-500/20"
+            >
+              Logout Session
+            </button>
           </div>
 
           {error ? (

@@ -1,29 +1,32 @@
 node_modules/
+.git/
 .next/
 .next-dev/
 .next-dev-*/
 .next-build/
 .next-build-*/
-.next-build-check/
-.next-build-verify/
 .next-output/
 .next-runtime/
 
-# Environment secrets — never commit
+# Secrets
 .env
 .env.local
 .env.*.local
 
-# Runtime WhatsApp auth/cache
+# WhatsApp runtime data — injected via volume in production
 .wwebjs_auth/
 .wwebjs_cache/
-
-# Application data (contains personal chat history and settings)
 server/data/
 
 # Log files
 logs/
 *.log
+
+# Development noise
+*.md
+README.md
+.gitignore
+.dockerignore
 
 # OS noise
 .DS_Store

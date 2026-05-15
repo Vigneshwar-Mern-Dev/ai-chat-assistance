@@ -3,6 +3,26 @@ const { readJsonFile, writeJsonFile } = require("../utils/fileStore");
 
 const replyScriptsFilePath = path.join(process.cwd(), "server", "data", "replyScripts.json");
 
+// In-memory cache — invalidated on every write so disk reads only happen at startup
+// and after a mutation.
+let cachedScripts = null;
+
+async function loadReplyScripts() {
+  if (cachedScripts !== null) {
+    return cachedScripts;
+  }
+
+  cachedScripts = await readJsonFile(replyScriptsFilePath, {});
+  return cachedScripts;
+}
+
+async function saveReplyScripts(replyScripts) {
+  await writeJsonFile(replyScriptsFilePath, replyScripts || {});
+  // Update cache after a successful write
+  cachedScripts = replyScripts || {};
+  return cachedScripts;
+}
+
 function normalizeText(value) {
   return String(value || "")
     .toLowerCase()
@@ -35,8 +55,7 @@ function normalizeIntent(value) {
 function normalizeStringList(value, { maxItems = 30, maxItemLength = 240 } = {}) {
   const items = Array.isArray(value)
     ? value
-    : String(value || "")
-        .split(/\r?\n|,/);
+    : String(value || "").split(/\r?\n|,/);
 
   return [...new Set(
     items
@@ -92,15 +111,6 @@ function findKeywordIntent(replyScripts, messageText) {
   return null;
 }
 
-async function loadReplyScripts() {
-  return readJsonFile(replyScriptsFilePath, {});
-}
-
-async function saveReplyScripts(replyScripts) {
-  await writeJsonFile(replyScriptsFilePath, replyScripts || {});
-  return replyScripts || {};
-}
-
 async function upsertReplyScript(intentValue, scriptValue) {
   const intent = normalizeIntent(intentValue);
 
@@ -118,10 +128,7 @@ async function upsertReplyScript(intentValue, scriptValue) {
   replyScripts[intent] = script;
   await saveReplyScripts(replyScripts);
 
-  return {
-    intent,
-    script
-  };
+  return { intent, script };
 }
 
 async function deleteReplyScript(intentValue) {

@@ -6,6 +6,7 @@ function getAllowedOrigins() {
 }
 
 function isAllowedOrigin(origin) {
+  // Server-to-server requests (no Origin header) are permitted from same-host callers.
   if (!origin) {
     return true;
   }
@@ -13,10 +14,20 @@ function isAllowedOrigin(origin) {
   const configuredOrigins = getAllowedOrigins();
 
   if (configuredOrigins.length) {
-    return configuredOrigins.includes(origin);
+    if (configuredOrigins.includes(origin)) return true;
   }
 
-  return /^https?:\/\//.test(origin);
+  // Development convenience: always allow localhost and loopback IPs
+  if (
+    origin.startsWith("http://localhost:") ||
+    origin.startsWith("http://127.0.0.1:") ||
+    origin.startsWith("http://[::1]:")
+  ) {
+    return true;
+  }
+
+  // When CORS_ORIGINS is not configured, deny all cross-origin browser requests.
+  return false;
 }
 
 function createCorsOptions() {
@@ -28,7 +39,8 @@ function createCorsOptions() {
       }
 
       callback(new Error("CORS origin is not allowed"));
-    }
+    },
+    credentials: true
   };
 }
 

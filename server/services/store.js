@@ -2,8 +2,10 @@ const EventEmitter = require("events");
 const path = require("path");
 const { authPath: authDirectoryPath } = require("../config/runtimePaths");
 const { pathExists, readJsonFile, writeJsonFile } = require("../utils/fileStore");
+const logger = require("../utils/logger");
 
 const settingsFilePath = path.join(process.cwd(), "server", "data", "settings.json");
+const messagesFilePath = path.join(process.cwd(), "server", "data", "messages.json");
 
 const defaultSettings = {
   aiEnabled: false,
@@ -75,20 +77,88 @@ class AppStore extends EventEmitter {
       chats: [],
       recentMessages: []
     };
+    this.pausedChats = new Set();
+    this.isSavingMessages = false;
   }
 
   async initialize() {
-    const savedSettings = await readJsonFile(settingsFilePath, defaultSettings);
+    const [savedSettings, savedMessages] = await Promise.all([
+      readJsonFile(settingsFilePath, defaultSettings),
+      readJsonFile(messagesFilePath, [])
+    ]);
+
     this.state.settings = {
       ...defaultSettings,
       ...savedSettings
     };
+
+    this.state.recentMessages = Array.isArray(savedMessages) ? savedMessages : [];
+    
+    // Reconstruct chats from messages if possible
+    this.reconstructChatsFromMessages();
+
     await this.updateSettings(this.state.settings);
     this.syncSessionPresence();
   }
 
+  reconstructChatsFromMessages() {
+    const chatMap = new Map();
+    
+    // Process messages from oldest to newest to keep lastMessageAt correct
+    [...this.state.recentMessages].reverse().forEach(msg => {
+      chatMap.set(msg.chatId, {
+        id: msg.chatId,
+        name: msg.chatName,
+        lastMessage: msg.body,
+        lastMessageAt: msg.createdAt,
+        unreadCount: msg.unreadCount || 0,
+        aiReplied: msg.aiReplied,
+        lastDirection: msg.direction,
+        pendingReply: false,
+        pendingReplyCount: 0,
+        isPaused: this.pausedChats.has(msg.chatId)
+      });
+    });
+
+    this.state.chats = Array.from(chatMap.values())
+      .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime())
+      .slice(0, 50);
+  }
+
+  async saveMessages() {
+    if (this.isSavingMessages) return;
+    this.isSavingMessages = true;
+    try {
+      await writeJsonFile(messagesFilePath, this.state.recentMessages);
+    } catch (error) {
+      logger.error("Failed to save messages", { error: error.message });
+    } finally {
+      this.isSavingMessages = false;
+    }
+  }
+
   getSettings() {
     return { ...this.state.settings };
+  }
+
+  isChatPaused(chatId) {
+    return this.pausedChats.has(chatId);
+  }
+
+  toggleChatPause(chatId, isPaused) {
+    if (isPaused) {
+      this.pausedChats.add(chatId);
+      // If pausing, we should also clear any pending reply in the queue
+      this.clearPendingReply(chatId);
+    } else {
+      this.pausedChats.delete(chatId);
+    }
+
+    const existingChatIndex = this.state.chats.findIndex((chat) => chat.id === chatId);
+    if (existingChatIndex >= 0) {
+      this.state.chats[existingChatIndex].isPaused = isPaused;
+      this.emitSnapshot();
+    }
   }
 
   getRecentMessagesForChat(chatId, limit = 10) {
@@ -218,6 +288,7 @@ class AppStore extends EventEmitter {
       aiReplied: previousChats.get(chat.id)?.aiReplied || false,
       pendingReply: previousChats.get(chat.id)?.pendingReply || false,
       pendingReplyCount: previousChats.get(chat.id)?.pendingReplyCount || 0,
+      isPaused: this.pausedChats.has(chat.id),
       ...chat
     }));
 
@@ -233,7 +304,7 @@ class AppStore extends EventEmitter {
 
     this.state.meta.lastMessageAt = nextMessage.createdAt;
     this.state.recentMessages = [nextMessage, ...this.state.recentMessages]
-      .slice(0, 80)
+      .slice(0, 1000) // Keep more messages in history for persistence
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
 
     const existingChatIndex = this.state.chats.findIndex((chat) => chat.id === message.chatId);
@@ -247,7 +318,8 @@ class AppStore extends EventEmitter {
       aiReplied: message.aiReplied,
       lastDirection: message.direction,
       pendingReply: previousChat?.pendingReply || false,
-      pendingReplyCount: previousChat?.pendingReplyCount || 0
+      pendingReplyCount: previousChat?.pendingReplyCount || 0,
+      isPaused: this.pausedChats.has(message.chatId)
     };
 
     if (existingChatIndex >= 0) {
@@ -263,6 +335,7 @@ class AppStore extends EventEmitter {
       .sort((left, right) => new Date(right.lastMessageAt || 0).getTime() - new Date(left.lastMessageAt || 0).getTime())
       .slice(0, 50);
 
+    this.saveMessages();
     this.emitSnapshot();
   }
 

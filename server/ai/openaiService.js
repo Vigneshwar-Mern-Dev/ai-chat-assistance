@@ -167,14 +167,18 @@ function createOpenAIService() {
       };
     }
 
-    const systemInstruction =
-      "Classify a WhatsApp message into one of the provided intent names. Return only JSON with keys intent and confidence. Use null intent when none clearly match.";
+    const systemInstruction = `You are an intent classifier for a WhatsApp bot.
+Your job is to check if the user's message matches one of the predefined 'Allowed intents'.
+- If it clearly matches an allowed intent (e.g., greetings, specific inquiries listed), return that intent.
+- If the user is asking a general knowledge question (e.g., "what is climate", "how are you"), or asking about something NOT in the allowed intents (e.g., "atm franchise"), you MUST return null.
+Return ONLY a valid JSON object with keys "intent" (string or null) and "confidence" (number between 0.0 and 1.0).`;
+
     const prompt = [
       `Allowed intents: ${safeIntents.join(", ")}`,
       `Contact: ${contactName || "unknown"}`,
       `Recent conversation:\n${formatConversationHistory(conversationHistory)}`,
       `Latest incoming message:\n${safeMessageText}`,
-      'JSON format: {"intent":"intent_name_or_null","confidence":0.0}'
+      'Output strictly JSON: {"intent": "intent_name_or_null", "confidence": 0.0}'
     ].join("\n\n");
 
     const output = await requestModelText({

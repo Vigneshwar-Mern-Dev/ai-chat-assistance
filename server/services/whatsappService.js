@@ -1,9 +1,16 @@
 const fs = require("fs");
-const QRCode = require("qrcode");
-const { authPath, cachePath } = require("../config/runtimePaths");
+const path = require("path");
+const { isPersonalChat, isPersonalChatId, shouldAutoReplyToContact } = require("../utils/chatFilters");
 const { createWhatsAppClient } = require("../bot/client");
 const { createAutoReplyService } = require("./autoReplyService");
-const { isPersonalChat } = require("../utils/chatFilters");
+const logger = require("../utils/logger");
+const QRCode = require("qrcode");
+const { authPath, cachePath } = require("../config/runtimePaths");
+
+// Reconnect configuration
+const RECONNECT_BASE_DELAY_MS = 5000;
+const RECONNECT_MAX_DELAY_MS = 10 * 60 * 1000; // 10 minutes
+const RECONNECT_MAX_ATTEMPTS = 20;
 
 function createWhatsAppService({ store, openAIService }) {
   let client = null;
@@ -54,6 +61,7 @@ function createWhatsAppService({ store, openAIService }) {
       await currentClient.destroy();
     } catch (error) {
       store.setLastError(error.message || "Failed to destroy WhatsApp client");
+      logger.warn("WhatsApp client destroy error", { error: error.message });
     }
   }
 
@@ -75,28 +83,60 @@ function createWhatsAppService({ store, openAIService }) {
     clearChatSyncTimer();
     chatSyncTimer = setInterval(() => {
       buildChatSnapshot().catch((error) => {
+        logger.warn("Background chat sync failed", { error: error.message });
         store.setLastError(error.message || "Background chat sync failed");
       });
     }, 45000);
   }
 
+  /**
+   * Exponential backoff reconnect with a hard cap on attempts.
+   * Delay doubles each attempt: 5 s, 10 s, 20 s … up to 10 min.
+   */
   function scheduleReconnect(reason = "Connection lost") {
     if (manualActionInProgress) {
       return;
     }
 
+    const currentAttempts = store.getSnapshot().session.reconnectAttempts;
+
+    if (currentAttempts >= RECONNECT_MAX_ATTEMPTS) {
+      logger.error("Max reconnect attempts reached — manual intervention required", {
+        attempts: currentAttempts,
+        reason
+      });
+      store.updateStatus("disconnected", {
+        qrCode: null,
+        lastError: `Reconnect abandoned after ${RECONNECT_MAX_ATTEMPTS} attempts: ${reason}`
+      });
+      return;
+    }
+
     clearReconnectTimer();
     store.incrementReconnectAttempts();
+
+    const delay = Math.min(
+      RECONNECT_BASE_DELAY_MS * Math.pow(2, currentAttempts),
+      RECONNECT_MAX_DELAY_MS
+    );
+
     store.updateStatus("reconnecting", {
       qrCode: null,
       lastError: reason
     });
 
+    logger.info("Scheduling reconnect", {
+      attempt: currentAttempts + 1,
+      delayMs: delay,
+      reason
+    });
+
     reconnectTimer = setTimeout(() => {
       initialize({ forceRestart: true }).catch((error) => {
+        logger.error("Reconnect attempt failed", { error: error.message });
         store.setLastError(error.message || "Reconnect failed");
       });
-    }, 5000);
+    }, delay);
   }
 
   function bindClientEvents(currentClient) {
@@ -105,11 +145,13 @@ function createWhatsAppService({ store, openAIService }) {
         const qrCode = await QRCode.toDataURL(qrText);
         store.setQrCodeStatus(qrCode);
       } catch (error) {
+        logger.error("Failed to render QR code", { error: error.message });
         store.setLastError(error.message || "Failed to render QR code");
       }
     });
 
     currentClient.on("authenticated", () => {
+      logger.info("WhatsApp authenticated");
       store.syncSessionPresence();
     });
 
@@ -120,12 +162,15 @@ function createWhatsAppService({ store, openAIService }) {
         store.setConnectedClient(currentClient.info || {});
         startChatSyncLoop();
         await buildChatSnapshot();
+        logger.info("WhatsApp client ready", { clientName: currentClient.info?.pushname });
       } catch (error) {
+        logger.error("Failed to prepare WhatsApp client", { error: error.message });
         store.setLastError(error.message || "Failed to prepare WhatsApp client");
       }
     });
 
     currentClient.on("auth_failure", (message) => {
+      logger.warn("WhatsApp auth failure", { message });
       store.updateStatus("disconnected", {
         lastError: message || "Authentication failed"
       });
@@ -133,16 +178,19 @@ function createWhatsAppService({ store, openAIService }) {
     });
 
     currentClient.on("disconnected", (reason) => {
+      const reasonStr = String(reason || "Disconnected");
+      logger.warn("WhatsApp disconnected", { reason: reasonStr });
       store.updateStatus("disconnected", {
-        lastError: String(reason || "Disconnected")
+        lastError: reasonStr
       });
-      scheduleReconnect(String(reason || "Disconnected"));
+      scheduleReconnect(reasonStr);
     });
 
     currentClient.on("message", async (message) => {
       try {
         await autoReplyService.handleIncomingMessage(message);
       } catch (error) {
+        logger.error("Failed to process incoming message", { error: error.message });
         store.setLastError(error.message || "Failed to process message");
       }
     });
@@ -188,9 +236,8 @@ function createWhatsAppService({ store, openAIService }) {
 
   async function reconnect() {
     manualActionInProgress = false;
-    store.updateStatus("reconnecting", {
-      qrCode: null
-    });
+    store.resetReconnectAttempts(); // Manual reconnect resets the backoff counter
+    store.updateStatus("reconnecting", { qrCode: null });
     await initialize({ forceRestart: true });
   }
 

@@ -14,9 +14,24 @@ if (!process.env.NEXT_DIST_DIR || process.env.NEXT_DIST_DIR === ".next-runtime")
   process.env.NEXT_DIST_DIR = defaultDistDir;
 }
 
+// Always pass an explicit port for dev/start so Next.js never silently
+// auto-increments and collides with the backend port (3001).
+const nextPort = process.env.NEXT_PORT || "3000";
+const extraArgs = [];
+if ((command === "dev" || command === "start") && !args.includes("-p") && !args.includes("--port")) {
+  extraArgs.push("-p", nextPort);
+}
+
+const envOptions = { ...process.env };
+if (!envOptions.NODE_OPTIONS) {
+  envOptions.NODE_OPTIONS = '--max-old-space-size=8192';
+} else if (!envOptions.NODE_OPTIONS.includes('--max-old-space-size')) {
+  envOptions.NODE_OPTIONS += ' --max-old-space-size=8192';
+}
+
 const nextCliPath = require.resolve("next/dist/bin/next");
-const result = spawnSync(process.execPath, [nextCliPath, ...args], {
-  env: process.env,
+const result = spawnSync(process.execPath, [nextCliPath, command, ...extraArgs, ...args.slice(1)], {
+  env: envOptions,
   stdio: "inherit"
 });
 

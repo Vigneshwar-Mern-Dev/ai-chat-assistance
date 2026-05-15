@@ -10,8 +10,12 @@ const safeDistDir =
 const nextConfig = {
   distDir: safeDistDir,
   reactStrictMode: true,
+  experimental: {
+    webpackBuildWorker: false
+  },
   webpack: (config, { dev }) => {
     if (dev) {
+      config.cache = false;
       if (!config.watchOptions) {
         config.watchOptions = {};
       }

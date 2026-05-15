@@ -1,8 +1,9 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { io } from "socket.io-client";
-import { DASHBOARD_API_TOKEN, SOCKET_URL, apiRequest } from "@/lib/api";
+import { SOCKET_URL, apiRequest } from "@/lib/api";
 
 const DashboardContext = createContext(null);
 
@@ -48,20 +49,53 @@ export function DashboardProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState("");
+  const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     let mounted = true;
+    let socket = null;
 
     async function loadSnapshot() {
+      if (pathname === "/login") {
+        setLoading(false);
+        return;
+      }
+
       try {
         const response = await apiRequest("/api/app");
         if (mounted && response.snapshot) {
           setSnapshot(response.snapshot);
           setLoading(false);
+          
+          // Connect socket only after successful auth
+          if (!socket) {
+            socket = io(SOCKET_URL, {
+              transports: ["websocket", "polling"],
+              withCredentials: true
+            });
+
+            socket.on("app:snapshot", (nextSnapshot) => {
+              if (mounted && nextSnapshot) {
+                setError("");
+                setSnapshot(nextSnapshot);
+              }
+            });
+
+            socket.on("connect_error", () => {
+              if (mounted) {
+                setError(`Could not connect to realtime server at ${SOCKET_URL}`);
+              }
+            });
+          }
         }
       } catch (requestError) {
         if (mounted) {
-          setError(requestError.message);
+          if (requestError.message.toLowerCase().includes("unauthorized") || requestError.message.toLowerCase().includes("session")) {
+             router.replace("/login");
+          } else {
+             setError(requestError.message);
+          }
           setLoading(false);
         }
       }
@@ -69,30 +103,11 @@ export function DashboardProvider({ children }) {
 
     loadSnapshot();
 
-    const socket = io(SOCKET_URL, {
-      transports: ["websocket", "polling"],
-      auth: DASHBOARD_API_TOKEN ? { token: DASHBOARD_API_TOKEN } : undefined
-    });
-
-    socket.on("app:snapshot", (nextSnapshot) => {
-      if (mounted && nextSnapshot) {
-        setError("");
-        setSnapshot(nextSnapshot);
-        setLoading(false);
-      }
-    });
-
-    socket.on("connect_error", () => {
-      if (mounted) {
-        setError(`Could not connect to realtime server at ${SOCKET_URL}`);
-      }
-    });
-
     return () => {
       mounted = false;
-      socket.close();
+      if (socket) socket.close();
     };
-  }, []);
+  }, [pathname, router]);
 
   async function runAction(actionKey, requestPath, options) {
     setSubmitting(actionKey);
@@ -105,10 +120,22 @@ export function DashboardProvider({ children }) {
       }
       return response;
     } catch (requestError) {
+      if (requestError.message.toLowerCase().includes("unauthorized") || requestError.message.toLowerCase().includes("session")) {
+         router.replace("/login");
+      }
       setError(requestError.message);
       throw requestError;
     } finally {
       setSubmitting("");
+    }
+  }
+
+  async function logout() {
+    try {
+      await apiRequest("/api/auth/logout", { method: "POST" });
+      router.replace("/login");
+    } catch (err) {
+      router.replace("/login");
     }
   }
 
@@ -126,8 +153,9 @@ export function DashboardProvider({ children }) {
         }),
       reconnect: () => runAction("session", "/api/session/reconnect", { method: "POST" }),
       regenerateQr: () => runAction("session", "/api/session/regenerate-qr", { method: "POST" }),
-      logout: () => runAction("session", "/api/session/logout", { method: "POST" }),
-      resetSession: () => runAction("session", "/api/session/reset", { method: "POST" })
+      whatsappLogout: () => runAction("session", "/api/session/logout", { method: "POST" }),
+      resetSession: () => runAction("session", "/api/session/reset", { method: "POST" }),
+      logout: logout
     }
   };
 

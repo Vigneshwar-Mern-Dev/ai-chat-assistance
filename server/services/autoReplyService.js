@@ -6,6 +6,7 @@ const {
 } = require("../utils/chatFilters");
 const { sanitizeReplyText } = require("../utils/replySanitizer");
 const { resolveScriptedReply } = require("./replyScriptService");
+const logger = require("../utils/logger");
 
 function createAutoReplyService({ store, openAIService, getClient }) {
   const pendingReplies = new Map();
@@ -19,14 +20,16 @@ function createAutoReplyService({ store, openAIService, getClient }) {
     }
 
     if (!isPersonalChatId(message.from)) {
-      console.info(`Ignored non-personal chat: ${message.from || "unknown chat"}`);
+      logger.info("Ignored non-personal chat", { chatId: message.from || "unknown" });
       return;
     }
 
     const [chat, contact] = await Promise.all([message.getChat(), message.getContact()]);
 
     if (!isPersonalChat(chat)) {
-      console.info(`Ignored non-personal chat object: ${chat.id?._serialized || message.from}`);
+      logger.info("Ignored non-personal chat object", {
+        chatId: chat.id?._serialized || message.from
+      });
       return;
     }
 
@@ -58,8 +61,16 @@ function createAutoReplyService({ store, openAIService, getClient }) {
       return;
     }
 
+    if (store.isChatPaused(message.from)) {
+      logger.info("Skipped auto-reply for paused chat (Human Handoff)", { chatId: message.from });
+      return;
+    }
+
     if (!shouldAutoReplyToContact({ chat, contact, contactName })) {
-      console.info(`Ignored auto-reply for protected contact: ${contactName} (${message.from})`);
+      logger.info("Skipped auto-reply for protected contact", {
+        contactName,
+        chatId: message.from
+      });
       return;
     }
 
@@ -97,6 +108,10 @@ function createAutoReplyService({ store, openAIService, getClient }) {
     nextReply.timer = setTimeout(() => {
       flushReply(chatId).catch((error) => {
         store.clearPendingReply(chatId);
+        logger.error("Failed to process queued reply", {
+          chatId,
+          error: error.message
+        });
         store.setLastError(error.message || "Failed to process queued reply");
       });
     }, collectionWindowMs);
@@ -145,27 +160,29 @@ function createAutoReplyService({ store, openAIService, getClient }) {
       const conversationHistory = store.getRecentMessagesForChat(chatId, 10);
       const scriptedReply = await resolveScriptedReply({
         messageText: combinedMessage,
-        classifyIntent: (intents) => openAIService.classifyIntent({
+        classifyIntent: (intents) =>
+          openAIService.classifyIntent({
+            messageText: combinedMessage,
+            contactName: pendingReply.chatName,
+            conversationHistory,
+            intents
+          })
+      });
+
+      const replyText =
+        scriptedReply?.replyText ||
+        (await openAIService.generateReply({
+          customPrompt: settings.customPrompt,
           messageText: combinedMessage,
           contactName: pendingReply.chatName,
-          conversationHistory,
-          intents
-        })
-      });
+          conversationHistory
+        }));
 
-      const replyText = scriptedReply?.replyText || await openAIService.generateReply({
-        customPrompt: settings.customPrompt,
-        messageText: combinedMessage,
-        contactName: pendingReply.chatName,
-        conversationHistory
-      });
       const safeReplyText = sanitizeReplyText(replyText);
-
       const targetDelay = randomNumberInRange(
         settings.replyDelayMinSeconds * 1000,
         settings.replyDelayMaxSeconds * 1000
       );
-
       const remainingDelay = Math.max(0, targetDelay - (Date.now() - startedAt));
 
       if (settings.typingSimulation && typeof chat.sendStateTyping === "function") {
@@ -190,17 +207,29 @@ function createAutoReplyService({ store, openAIService, getClient }) {
         direction: "outgoing",
         aiReplied: true
       });
+
+      logger.info("AI reply sent", {
+        chatId,
+        contactName: pendingReply.chatName,
+        source: scriptedReply ? scriptedReply.source : "ai",
+        latencyMs: Date.now() - startedAt
+      });
     } catch (error) {
       store.clearPendingReply(chatId);
 
-      if (settings.typingSimulation && typeof chat.clearState === "function") {
+      if (settings.typingSimulation && chat && typeof chat.clearState === "function") {
         try {
           await chat.clearState();
-        } catch (clearStateError) {
-          // Preserve the original reply failure instead of hiding it behind cleanup noise.
+        } catch {
+          // Suppress cleanup errors — preserve the original failure context
         }
       }
 
+      logger.error("Failed to send AI reply", {
+        chatId,
+        contactName: pendingReply.chatName,
+        error: error.message
+      });
       store.setLastError(error.message || "Failed to send AI reply");
     }
   }
